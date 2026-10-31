@@ -147,6 +147,15 @@ namespace OpenCity
             if (smoothness >= 0f) m.SetFloat("_Glossiness", smoothness);
             if (metallic >= 0f) m.SetFloat("_Metallic", metallic);
 
+            // ambient occlusion baked into the texture set (*_o.png) - darkens window
+            // reveals, sills and panel joints, which is what makes facades read as solid
+            var ao = string.IsNullOrEmpty(texBase) ? null : Optional(texBase + "_o");
+            if (ao != null)
+            {
+                m.SetTexture("_OcclusionMap", ao);
+                m.SetFloat("_OcclusionStrength", 1f);
+            }
+
             if (emissive)
             {
                 var em = string.IsNullOrEmpty(texBase) ? null : Optional(texBase + "_e");

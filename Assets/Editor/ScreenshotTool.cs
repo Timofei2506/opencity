@@ -57,6 +57,7 @@ namespace OpenCity.EditorTools
                 // Let the render pipeline settle (camera setup, skybox).
                 InvokeAll(behaviours, "Update");
 
+                DumpGiants();
                 Capture();
             }
             catch (Exception e)
@@ -68,6 +69,35 @@ namespace OpenCity.EditorTools
 
             Debug.Log("[Screenshots] done");
             EditorApplication.Exit(0);
+        }
+
+
+        /// <summary>Logs every huge renderer - used to find geometry that hides the roads.</summary>
+        static void DumpGiants()
+        {
+            var renderers = UnityEngine.Object.FindObjectsOfType<MeshRenderer>();
+            Debug.Log("[Screenshots] renderers: " + renderers.Length);
+
+            int giants = 0;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var r = renderers[i];
+                var b = r.bounds;
+                float span = Mathf.Max(b.size.x, b.size.z);
+                if (span < 100f) continue;
+                giants++;
+                var mat = r.sharedMaterial;
+                Debug.Log($"[Screenshots] GIANT '{r.name}' pos={r.transform.position} size={b.size} " +
+                          $"span={span:F0} mat='{(mat != null ? mat.name : "null")}' " +
+                          $"shader='{(mat != null && mat.shader != null ? mat.shader.name : "null")}' " +
+                          $"queue={(mat != null ? mat.renderQueue : -1)} active={r.gameObject.activeInHierarchy}");
+            }
+            Debug.Log("[Screenshots] giant renderers: " + giants);
+
+            var ground = GameObject.Find("Ground");
+            Debug.Log(ground == null
+                ? "[Screenshots] no object named Ground"
+                : $"[Screenshots] Ground found: pos={ground.transform.position} scale={ground.transform.localScale} active={ground.activeInHierarchy}");
         }
 
         static void Capture()
