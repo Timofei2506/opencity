@@ -23,16 +23,19 @@ namespace OpenCity.EditorTools
 
         const string ScenePath = "Assets/Scenes/Main.unity";
 
+        // Shaders that the game looks up at runtime through Shader.Find(...) and therefore
+        // must exist in the player build.
+        //
+        // IMPORTANT: never list Unity's internal shaders here (Hidden/InternalErrorShader,
+        // GUI/Text Shader, ...). They live in "Library/unity default resources" with
+        // HideFlags.DontSave, and forcing them into the build makes the player packager try to
+        // serialise them into Resources/unity_builtin_extra - the write lock is never released
+        // ("Assertion failed on expression: 'm_LockCount == 0'") and the build dies with
+        // "Building - Failed to write file: .../unity_builtin_extra".
         static readonly string[] AlwaysIncludedShaders =
         {
             "Standard",
-            "Standard (Specular setup)",
             "Skybox/Procedural",
-            "Sprites/Default",
-            "UI/Default",
-            "Hidden/InternalErrorShader",
-            "Particles/Standard Unlit",
-            "Legacy Shaders/Particles/Additive",
             "OpenCity/SkyboxSky",
         };
 

@@ -84,6 +84,8 @@ jobs:
           echo "disk after pull:"; df -h / | tail -1
 
       - name: Activate Personal license and build
+        id: unity
+        continue-on-error: true
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
@@ -96,7 +98,7 @@ jobs:
             -w /project \
             "${{ matrix.image }}" \
             bash -lc '
-              set -o pipefail
+              df -h /project | tail -1 > logs/disk.txt
 
               CLIENT=$(find /opt/unity -name "Unity.Licensing.Client" -type f 2>/dev/null | head -1)
               if [ -z "$CLIENT" ]; then
@@ -105,25 +107,30 @@ jobs:
               fi
               chmod +x "$CLIENT" || true
               echo "== licensing client: $CLIENT"
-              if ! "$CLIENT" --activate-all --include-personal \
-                     --username "$UNITY_EMAIL" --password "$UNITY_PASSWORD" 2>&1 | tee logs/activation.log; then
-                echo "::error title=Активация лицензии не удалась::Проверьте UNITY_EMAIL/UNITY_PASSWORD (и 2FA) — см. logs/activation.log"
-                exit 1
-              fi
-              if grep -qi "Unauthorized\|Invalid Credential" logs/activation.log; then
-                echo "::error title=Unity отклонил учётные данные::Проверьте пароль Unity ID или включённую двухфакторную аутентификацию"
+              "$CLIENT" --activate-all --include-personal \
+                 --username "$UNITY_EMAIL" --password "$UNITY_PASSWORD" > logs/activation.log 2>&1
+              if [ $? -ne 0 ] || grep -qi "Invalid Credential\|Unauthorized" logs/activation.log; then
+                cat logs/activation.log
+                echo "::error title=Активация лицензии не удалась::Проверьте UNITY_EMAIL/UNITY_PASSWORD (и 2FA)"
                 exit 1
               fi
 
-              echo "== disk inside container =="; df -h /project | tail -1
-              echo "== building ${{ matrix.target }}"
-              /opt/unity/Editor/Unity -batchmode -nographics -quit \
+              echo "== disk =="; cat logs/disk.txt
+              echo "== building ${{ matrix.target }} =="
+              timeout 3600 /opt/unity/Editor/Unity -batchmode -nographics -quit \
                 -projectPath /project \
                 -buildTarget ${{ matrix.target }} \
                 -executeMethod ${{ matrix.method }} \
-                -logFile - 2>&1 | tee logs/build.log
-              status=${PIPESTATUS[0]}
+                -logFile /project/logs/build.log &
+              UPID=$!
+              tail -n +1 -F logs/build.log 2>/dev/null &
+              TPID=$!
+              wait $UPID
+              status=$?
+              kill $TPID 2>/dev/null || true
               echo "Unity exit code: $status"
+              [ $status -eq 124 ] && echo "::error::Unity build timed out after 60 min"
+              ls -la "${{ matrix.output }}" 2>/dev/null || true
               exit $status
             '
 
