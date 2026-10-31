@@ -73,7 +73,7 @@ namespace OpenCity.EditorTools
             PlayerSettings.runInBackground = true;
             PlayerSettings.usePlayerLog = true;
             PlayerSettings.SetScriptingBackend(NamedBuildTarget.Standalone, ScriptingImplementation.Mono2x);
-            PlayerSettings.SetApiCompatibilityLevel(NamedBuildTarget.Standalone, ApiCompatibilityLevel.NET_Standard_2_1);
+            PlayerSettings.SetApiCompatibilityLevel(NamedBuildTarget.Standalone, ApiCompatibilityLevel.NET_Standard);
 
             // ---- quality ----
             QualitySettings.shadows = ShadowQuality.All;
@@ -83,7 +83,7 @@ namespace OpenCity.EditorTools
             QualitySettings.shadowCascades = 4;
             QualitySettings.antiAliasing = 4;
             QualitySettings.anisotropicFiltering = AnisotropicFiltering.ForceEnable;
-            QualitySettings.textureQuality = 2;
+            QualitySettings.globalTextureMipmapLimit = 0;
             QualitySettings.lodBias = 1.5f;
 
             EnsureAlwaysIncludedShaders();
