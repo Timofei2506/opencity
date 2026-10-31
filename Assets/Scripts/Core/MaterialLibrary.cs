@@ -13,8 +13,8 @@ namespace OpenCity
         public const int BlocksZ = 7;
         public const float SidewalkWidth = 5f;
         public const float SidewalkHeight = 0.16f;
-        public const float CityCell => BlockSize + RoadWidth;
-        public const float CityRadius => CityCell * BlocksX * 0.5f;
+        public const float CityCell = BlockSize + RoadWidth;
+        public const float CityRadius = CityCell * BlocksX * 0.5f;
 
         // --- gameplay ---
         public const float DayLengthSeconds = 600f;   // one in-game day = 10 real minutes
