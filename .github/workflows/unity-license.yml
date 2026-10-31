@@ -1,23 +1,20 @@
 name: Unity license
 
-# Получение файла лицензии для game-ci (Personal / бесплатный Unity).
+# Активация Unity на аккаунте (Personal / бесплатная лицензия) для CI-сборок.
 #
 # Запуск: Actions -> "Unity license" -> Run workflow.
 #
-# Джоба "activate" пробует активировать Personal-лицензию автоматически по
-# UNITY_EMAIL / UNITY_PASSWORD прямо в контейнере с Unity. Если Unity создаст
-# Unity_lic.ulf — он появится в артефакте "unity-license".
+# Используется официальный клиент лицензирования Unity, который умеет получать
+# Personal-место (seat) прямо по логину/паролю Unity ID:
 #
-# Если автоактивация не сработала (Unity требует ручного подтверждения),
-# используйте артефакт "unity-activation-file" (.alf):
-#   1) скачать .alf;
-#   2) загрузить на https://license.unity3d.com/manual (нужен вход в Unity ID);
-#   3) получить .ulf и положить его содержимое в секрет UNITY_LICENSE.
+#   Unity.Licensing.Client --activate-all --include-personal \
+#       --username "$UNITY_EMAIL" --password "$UNITY_PASSWORD"
 #
-# Готовый .ulf также лежит локально после активации Unity Hub:
-#   Windows: C:\ProgramData\Unity\Unity_lic.ulf
-#   macOS:   /Library/Application Support/Unity/Unity_lic.ulf
-#   Linux:   ~/.local/share/unity3d/Unity/Unity_lic.ulf
+# Ручной способ через license.unity3d.com/manual для бесплатных лицензий Unity
+# больше не поддерживает (офлайн-активация осталась только для Enterprise).
+#
+# Если у аккаунта включена двухфакторная аутентификация, клиент потребует код:
+# в этом случае добавьте секрет UNITY_TOTP_KEY (секрет аутентификатора).
 
 on:
   workflow_dispatch:
@@ -36,45 +33,45 @@ jobs:
       - name: Pull Unity image
         run: docker pull "$UNITY_IMAGE"
 
-      - name: Activate Personal license with Unity ID credentials
+      - name: Activate Personal seat via Unity licensing client
         continue-on-error: true
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_TOTP_KEY: ${{ secrets.UNITY_TOTP_KEY }}
         run: |
           mkdir -p license
           if [ -z "$UNITY_EMAIL" ] || [ -z "$UNITY_PASSWORD" ]; then
-            echo "::warning::Секреты UNITY_EMAIL / UNITY_PASSWORD не заданы - пропускаю автоактивацию."
+            echo "::warning::Секреты UNITY_EMAIL / UNITY_PASSWORD не заданы - пропускаю активацию."
             exit 0
           fi
           docker run --rm \
             -e UNITY_EMAIL \
             -e UNITY_PASSWORD \
+            -e UNITY_TOTP_KEY \
             -v "$PWD/license:/out" \
             -w /out \
             "$UNITY_IMAGE" \
             bash -lc '
-              /opt/unity/Editor/Unity -batchmode -nographics -quit -logFile - \
-                -username "$UNITY_EMAIL" -password "$UNITY_PASSWORD" 2>&1 | tail -60 || true
-              echo "---- licensing client state ----"
-              ls -la "$HOME/.local/share/unity3d/Unity" 2>/dev/null || echo "no license dir"
-              echo "---- export ----"
-              cp -v "$HOME/.local/share/unity3d/Unity/Unity_lic.ulf" /out/ \
-                || echo "NO_ULF_FILE_CREATED"
-              ls -la /out
-            '
+              set -o pipefail
+              CLIENT=$(find /opt/unity /usr/share/unity3d -name "Unity.Licensing.Client" -type f 2>/dev/null | head -1)
+              if [ -z "$CLIENT" ]; then
+                echo "LICENSING_CLIENT_NOT_FOUND"; find / -name "Unity.Licensing.Client*" 2>/dev/null | head -5; exit 0
+              fi
+              echo "licensing client: $CLIENT"
+              chmod +x "$CLIENT" 2>/dev/null || true
+              "$CLIENT" --activate-all --include-personal \
+                 --username "$UNITY_EMAIL" --password "$UNITY_PASSWORD" 2>&1 | tail -50 || true
 
-      - name: Create manual activation file (.alf)
-        continue-on-error: true
-        run: |
-          mkdir -p license
-          docker run --rm \
-            -v "$PWD/license:/out" \
-            -w /out \
-            "$UNITY_IMAGE" \
-            bash -lc '
-              /opt/unity/Editor/Unity -batchmode -nographics -createManualActivationFile -logFile - 2>&1 | tail -40 || true
-              ls -la /out
+              echo "---- license state ----"
+              find "$HOME/.local/share/unity3d" -maxdepth 3 -type f 2>/dev/null | head -40
+              echo "---- export ----"
+              mkdir -p /out/state
+              for f in $(find "$HOME/.local/share/unity3d/Unity" -maxdepth 1 -type f 2>/dev/null); do
+                cp -v "$f" /out/ 2>/dev/null || true
+              done
+              cp -a "$HOME/.local/share/unity3d/Unity/." /out/state/ 2>/dev/null || echo "nothing to copy"
+              ls -la /out /out/state 2>/dev/null || true
             '
 
       - name: Report what was produced
@@ -82,9 +79,9 @@ jobs:
           echo "=== license/ ==="
           ls -la license || true
           if ls license/*.ulf >/dev/null 2>&1; then
-            echo "::notice title=ULF получен::Файл .ulf создан автоматически. Его можно положить в секрет UNITY_LICENSE."
+            echo "::notice title=ULF получен::Файл .ulf создан автоматически."
           else
-            echo "::warning title=ULF не создан::Нужен ручной путь через .alf (см. описание workflow)."
+            echo "::warning title=ULF не создан::Смотрите лог шага активации (2FA? неверный пароль?)."
           fi
 
       - uses: actions/upload-artifact@v4
