@@ -198,7 +198,7 @@ namespace OpenCity
         // ------------------------------------------------------------------ world
 
         public static Material Road => Make("road", "asphalt", new Vector2(1f / 7f, 1f / 7f), Color.white);
-        public static Material Sidewalk => Make("sidewalk", "sidewalk", new Vector2(1f / 3f, 1f / 3f), Color.white);
+        public static Material Sidewalk => Make("sidewalk", "sidewalk", new Vector2(1f / 1.6f, 1f / 1.6f), Color.white);
         public static Material Concrete => Make("concrete", "concrete", new Vector2(1f / 4f, 1f / 4f), new Color(0.92f, 0.92f, 0.90f));
         public static Material Brick => Make("brick", "brick", new Vector2(1f / 2.2f, 1f / 2.2f), Color.white);
         public static Material Grass => Make("grass", "grass", new Vector2(1f / 4f, 1f / 4f), Color.white);
@@ -249,10 +249,10 @@ namespace OpenCity
         // ------------------------------------------------------------------ vehicles
 
         public static Material CarPaint(Color c)
-            => Make("carpaint_" + ColorUtility.ToHtmlStringRGB(c), null, Vector2.one, c, smoothness: 0.88f, metallic: 0.75f);
+            => Make("carpaint_" + ColorUtility.ToHtmlStringRGB(c), null, Vector2.one, c, smoothness: 0.86f, metallic: 0.35f);
 
-        public static Material CarGlass => Make("carglass", null, Vector2.one, new Color(0.09f, 0.11f, 0.13f, 0.72f),
-            smoothness: 0.97f, metallic: 0.45f, transparent: true);
+        public static Material CarGlass => Make("carglass", null, Vector2.one, new Color(0.13f, 0.16f, 0.19f, 0.62f),
+            smoothness: 0.95f, metallic: 0.25f, transparent: true);
 
         public static Material Chrome => Make("chrome", "metal", new Vector2(3f, 3f), new Color(0.86f, 0.87f, 0.90f),
             smoothness: 0.92f, metallic: 1f);

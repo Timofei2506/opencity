@@ -73,9 +73,36 @@ namespace OpenCity.EditorTools
 
 
         /// <summary>Logs every huge renderer - used to find geometry that hides the roads.</summary>
+        static Light FindSun()
+        {
+            foreach (var l in FindObjectsOfType<Light>(true))
+                if (l.type == LightType.Directional) return l;
+            return null;
+        }
+
         static void DumpGiants()
         {
             var renderers = UnityEngine.Object.FindObjectsOfType<MeshRenderer>();
+            Debug.Log("[Screenshots] colorSpace=" + QualitySettings.activeColorSpace
+                      + " ambientMode=" + RenderSettings.ambientMode
+                      + " ambientIntensity=" + RenderSettings.ambientIntensity.ToString("0.00")
+                      + " ambientSky=" + RenderSettings.ambientSkyColor.ToString("0.00")
+                      + " fogColor=" + RenderSettings.fogColor.ToString("0.00")
+                      + " fogStart=" + RenderSettings.fogStartDistance.ToString("0")
+                      + " fogEnd=" + RenderSettings.fogEndDistance.ToString("0"));
+            var sun = FindSun();
+            if (sun != null)
+                Debug.Log("[Screenshots] sun='" + sun.name + "' intensity=" + sun.intensity.ToString("0.00")
+                          + " color=" + sun.color.ToString("0.00") + " euler=" + sun.transform.eulerAngles.ToString("0"));
+            var cycle = FindObjectOfType<OpenCity.DayNightCycle>();
+            if (cycle != null)
+            {
+                Debug.Log("[Screenshots] dayNight hour=" + cycle.Hour.ToString("0.00")
+                          + " nightFactor=" + cycle.NightFactor.ToString("0.00"));
+                if (RenderSettings.skybox != null && RenderSettings.skybox.HasProperty("_ZenithColor"))
+                    Debug.Log("[Screenshots] sky zenith=" + RenderSettings.skybox.GetColor("_ZenithColor").ToString("0.00")
+                              + " horizon=" + RenderSettings.skybox.GetColor("_HorizonColor").ToString("0.00"));
+            }
             Debug.Log("[Screenshots] renderers: " + renderers.Length);
 
             int giants = 0;
@@ -135,7 +162,7 @@ namespace OpenCity.EditorTools
                 Vector3 p = car.transform.position;
                 FreeShot("05_car", p + Quaternion.Euler(0f, 145f, 0f) * (car.transform.forward * 5.5f) + Vector3.up * 1.9f,
                          p + Vector3.up * 0.8f, 40f);
-                FreeShot("06_car_close", p + car.transform.right * 3.0f + car.transform.forward * 2.6f + Vector3.up * 1.4f,
+                FreeShot("06_car_close", p + car.transform.right * 3.6f + car.transform.forward * 4.0f + Vector3.up * 1.55f,
                          p + Vector3.up * 0.75f, 38f);
             }
 
@@ -145,7 +172,7 @@ namespace OpenCity.EditorTools
             {
                 var ped = Nearest(peds, anchor);
                 Vector3 p = ped.transform.position;
-                FreeShot("07_pedestrian", p + ped.transform.forward * 2.4f + ped.transform.right * 0.9f + Vector3.up * 1.35f,
+                FreeShot("07_pedestrian", p + ped.transform.forward * 3.6f + ped.transform.right * 1.4f + Vector3.up * 1.5f,
                          p + Vector3.up * 0.95f, 35f);
             }
 
