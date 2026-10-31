@@ -1,0 +1,32 @@
+name: Dump settings
+on:
+  workflow_dispatch:
+env:
+  UNITY_IMAGE: unityci/editor:ubuntu-2022.3.20f1-base-3.2.2
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pull image
+        run: docker pull "$UNITY_IMAGE"
+      - name: Dump
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          mkdir -p Library logs
+          docker run --rm -e UNITY_EMAIL -e UNITY_PASSWORD -v "$PWD:/project" -w /project "$UNITY_IMAGE" bash -lc '
+            CLIENT=$(find /opt/unity -name "Unity.Licensing.Client" -type f | head -1); chmod +x "$CLIENT"
+            "$CLIENT" --activate-all --include-personal --username "$UNITY_EMAIL" --password "$UNITY_PASSWORD" > logs/activation.log 2>&1 || { cat logs/activation.log; exit 1; }
+            timeout -k 10 900 /opt/unity/Editor/Unity -batchmode -nographics -quit -projectPath /project \
+              -executeMethod OpenCity.EditorTools.ProjectSetup.DumpSettings -logFile /project/logs/dump.log
+            echo "exit=$?"
+            grep -a "DumpSettings\]" logs/dump.log | head -40
+          '
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dump
+          path: logs

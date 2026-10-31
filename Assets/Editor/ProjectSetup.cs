@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
@@ -51,6 +52,42 @@ namespace OpenCity.EditorTools
 
         [MenuItem("OpenCity/Apply project settings")]
         public static void ApplyFromMenu() => Apply(true);
+
+        /// <summary>
+        /// Applies every setting and dumps the resulting ProjectSettings/GraphicsSettings/
+        /// QualitySettings assets as base64 into the log, so a CI run can hand them back
+        /// and the repository can store the exact project configuration (colour space,
+        /// shader list, quality levels) instead of relying on Unity's defaults.
+        /// </summary>
+        public static void DumpSettings()
+        {
+            Apply(true);
+            AssetDatabase.SaveAssets();
+
+            string[] files =
+            {
+                "ProjectSettings/ProjectSettings.asset",
+                "ProjectSettings/GraphicsSettings.asset",
+                "ProjectSettings/QualitySettings.asset",
+                "ProjectSettings/TagManager.asset",
+                "ProjectSettings/DynamicsManager.asset",
+            };
+
+            foreach (var f in files)
+            {
+                if (!File.Exists(f))
+                {
+                    Debug.Log("[DumpSettings] MISSING " + f);
+                    continue;
+                }
+                var bytes = File.ReadAllBytes(f);
+                Debug.Log("[DumpSettings] BEGIN " + f + " " + bytes.Length);
+                Debug.Log("[DumpSettings] DATA " + Convert.ToBase64String(bytes));
+                Debug.Log("[DumpSettings] END " + f);
+            }
+
+            Debug.Log("[DumpSettings] colorSpace=" + PlayerSettings.colorSpace);
+        }
 
         [MenuItem("OpenCity/Create or repair Main scene")]
         public static void RepairScene()
