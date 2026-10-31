@@ -119,8 +119,16 @@ Unity.Licensing.Client --activate-all --include-personal \
 * Автоматически: `git push` в `main` (изменения в `.md` и `Tools/` сборку не триггерят).
 * Вручную: `Actions → Build game → Run workflow`.
 
-Артефакты: `OpenCity-Windows64` и `OpenCity-Linux64` (хранятся 30 дней) — внутри готовый билд
-(`OpenCity.exe` / `OpenCity.x86_64` + `OpenCity_Data`). Логи Unity — в артефактах `logs-Standalone*`.
+Основная цель сборки — **StandaloneWindows64**. Артефакт `OpenCity-Windows64` (хранится 30 дней)
+содержит `OpenCity.exe`, `UnityPlayer.dll` и папку `OpenCity_Data`; лог сборки — в артефакте
+`logs-StandaloneWindows64`.
+
+Сборка `StandaloneLinux64` вынесена в отдельный workflow `Build Linux (experimental)`:
+на образе `unityci/editor:ubuntu-2022.3.20f1-*` сборка Linux-плеера уходит в бесконечное
+ожидание (Unity не реагирует на SIGTERM, поэтому в workflow стоит watchdog с `pkill -9`
+и сохранением лога). Windows-плеер собирается штатно.
+
+Быстрая проверка компиляции без сборки плеера — workflow `Compile check` (~5 минут).
 
 Первая сборка занимает ~15–25 минут (импорт проекта), повторные — ~5–10 минут благодаря кешу `Library`.
 Репозиторий публичный, поэтому минуты GitHub Actions не тарифицируются.
@@ -212,6 +220,7 @@ Tools/gen_textures.py          генератор текстур (детерми
 |---|---|
 | Розовые объекты в билде | шейдер вырезан — проверьте `OpenCity → Apply project settings` |
 | Сборка падает на активации лицензии | неверные `UNITY_EMAIL`/`UNITY_PASSWORD`, включённая 2FA без `UNITY_TOTP_KEY`, либо для Plus/Pro не задан `UNITY_SERIAL` |
+| `Failed to write file: .../Resources/unity_builtin_extra` + `Assertion failed on expression: 'm_LockCount == 0'` | в Always Included Shaders попал внутренний шейдер Unity (`Hidden/InternalErrorShader`, `GUI/Text Shader`) с `HideFlags.DontSave` — уберите его из списка в `Assets/Editor/ProjectSetup.cs` |
 | «Unsupported Unity version» в CI | нет Docker-образа `unityci/editor` под эту версию; выставьте существующий тег в `build.yml` и `ProjectSettings/ProjectVersion.txt` |
 | Тёмная сцена | не хватает памяти на shadow cascades — уменьшите `QualitySettings.shadowCascades` |
 | Нет звука | не должно быть: звук синтезируется; проверьте, что `ProceduralAudio.Engine` не null в логе |
