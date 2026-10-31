@@ -1,0 +1,93 @@
+name: Build Linux (experimental)
+
+# Сборка StandaloneLinux64. Вынесена отдельно: на образе
+# unityci/editor:ubuntu-2022.3.20f1-* сборка Linux-плеера уходит в бесконечное
+# ожидание, поэтому здесь стоит watchdog: он принудительно убивает Unity
+# (SIGKILL) через 20 минут и сохраняет лог, чтобы было видно место зависания.
+#
+# Запуск: Actions -> "Build Linux (experimental)" -> Run workflow.
+
+on:
+  workflow_dispatch:
+
+env:
+  UNITY_IMAGE: unityci/editor:ubuntu-2022.3.20f1-linux-il2cpp-3.2.2
+  WATCHDOG_MINUTES: 20
+
+jobs:
+  build-linux:
+    name: Build StandaloneLinux64
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL \
+                      /usr/local/share/boost /usr/lib/jvm /opt/az 2>/dev/null || true
+          df -h / | tail -1
+
+      - name: Pull image
+        run: docker pull "$UNITY_IMAGE"
+
+      - name: Activate license and build
+        id: unity
+        continue-on-error: true
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          mkdir -p Library build/Linux64 logs
+          docker run --rm \
+            -e UNITY_EMAIL \
+            -e UNITY_PASSWORD \
+            -e WATCHDOG_MINUTES \
+            -v "$PWD:/project" \
+            -w /project \
+            "$UNITY_IMAGE" \
+            bash -lc '
+              df -h /project | tail -1 | tee logs/disk.txt
+
+              CLIENT=$(find /opt/unity -name "Unity.Licensing.Client" -type f 2>/dev/null | head -1)
+              chmod +x "$CLIENT" || true
+              "$CLIENT" --activate-all --include-personal \
+                 --username "$UNITY_EMAIL" --password "$UNITY_PASSWORD" > logs/activation.log 2>&1 \
+                 || { cat logs/activation.log; echo "::error::License activation failed"; exit 1; }
+
+              # watchdog: kill Unity hard if it hangs
+              ( sleep $(( WATCHDOG_MINUTES * 60 )); echo "WATCHDOG FIRED" >> logs/build.log; \
+                pkill -9 -f "Editor/Unity" ; sleep 5; pkill -9 -f Unity.Licensing.Client ) &
+
+              /opt/unity/Editor/Unity -batchmode -nographics -quit \
+                -projectPath /project \
+                -buildTarget StandaloneLinux64 \
+                -executeMethod OpenCity.EditorTools.BuildScript.BuildLinuxCI \
+                -logFile /project/logs/build.log &
+              UPID=$!
+              wait $UPID
+              echo "Unity exit code: $?"
+
+              tail -n 60 logs/build.log || true
+              echo "=== tail of the player build ==="
+              grep -nE "BuildScript|Build Finished|Error|error" logs/build.log | tail -30 || true
+              ls -la "${{ github.workspace }}/build/Linux64" 2>/dev/null || ls -la build/Linux64 || true
+            '
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-logs
+          path: logs
+          if-no-files-found: ignore
+
+      - name: Upload build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenCity-Linux64
+          path: build/Linux64
+          if-no-files-found: ignore
+          retention-days: 30

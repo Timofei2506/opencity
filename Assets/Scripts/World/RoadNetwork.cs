@@ -139,38 +139,40 @@ namespace OpenCity
         /// <summary>Random position on a road lane with a heading direction.</summary>
         public Vector3 RandomSpawn(System.Random rng, out Vector3 direction)
         {
-            for (int attempt = 0; attempt < 24; attempt++)
+            // Degenerate network (called before generation): keep the caller safe.
+            if (CountX < 2 || CountZ < 2)
             {
-                bool horizontal = rng.NextDouble() < 0.5;
-                if (horizontal)
-                {
-                    int j = rng.Next(0, CountZ);
-                    int i = rng.Next(0, CountX - 1);
-                    var a = Get(i, j);
-                    var b = Get(i + 1, j);
-                    Vector3 dir = (b.Pos - a.Pos).normalized * (rng.NextDouble() < 0.5 ? 1f : -1f);
-                    Vector3 from = dir.x > 0 ? a.Pos : b.Pos;
-                    Vector3 to = dir.x > 0 ? b.Pos : a.Pos;
-                    float t = 0.25f + 0.5f * (float)rng.NextDouble();
-                    direction = dir;
-                    return Vector3.Lerp(from, to, t) + RightOf(dir) * LaneOffset;
-                }
-                else
-                {
-                    int i = rng.Next(0, CountX);
-                    int j = rng.Next(0, CountZ - 1);
-                    var a = Get(i, j);
-                    var b = Get(i, j + 1);
-                    Vector3 dir = (b.Pos - a.Pos).normalized * (rng.NextDouble() < 0.5 ? 1f : -1f);
-                    Vector3 from = dir.z > 0 ? a.Pos : b.Pos;
-                    Vector3 to = dir.z > 0 ? b.Pos : a.Pos;
-                    float t = 0.25f + 0.5f * (float)rng.NextDouble();
-                    direction = dir;
-                    return Vector3.Lerp(from, to, t) + RightOf(dir) * LaneOffset;
-                }
+                direction = Vector3.forward;
+                return Vector3.zero;
             }
-            direction = Vector3.forward;
-            return new Vector3(GameConst.RoadLineX(1), 0f, 0f);
+
+            bool horizontal = rng.NextDouble() < 0.5;
+            if (horizontal)
+            {
+                int j = rng.Next(0, CountZ);
+                int i = rng.Next(0, CountX - 1);
+                var a = Get(i, j);
+                var b = Get(i + 1, j);
+                Vector3 dir = (b.Pos - a.Pos).normalized * (rng.NextDouble() < 0.5 ? 1f : -1f);
+                Vector3 from = dir.x > 0 ? a.Pos : b.Pos;
+                Vector3 to = dir.x > 0 ? b.Pos : a.Pos;
+                float t = 0.25f + 0.5f * (float)rng.NextDouble();
+                direction = dir;
+                return Vector3.Lerp(from, to, t) + RightOf(dir) * LaneOffset;
+            }
+            else
+            {
+                int i = rng.Next(0, CountX);
+                int j = rng.Next(0, CountZ - 1);
+                var a = Get(i, j);
+                var b = Get(i, j + 1);
+                Vector3 dir = (b.Pos - a.Pos).normalized * (rng.NextDouble() < 0.5 ? 1f : -1f);
+                Vector3 from = dir.z > 0 ? a.Pos : b.Pos;
+                Vector3 to = dir.z > 0 ? b.Pos : a.Pos;
+                float t = 0.25f + 0.5f * (float)rng.NextDouble();
+                direction = dir;
+                return Vector3.Lerp(from, to, t) + RightOf(dir) * LaneOffset;
+            }
         }
 
         public bool InCity(Vector3 p)

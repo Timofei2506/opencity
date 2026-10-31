@@ -69,7 +69,7 @@ namespace OpenCity
                 mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 mr.receiveShadows = false;
                 p = go.AddComponent<FxParticle>();
-                p.renderer = mr;
+                p.Rend = mr;
             }
             else
             {
@@ -219,7 +219,7 @@ namespace OpenCity
 
     public class FxParticle : MonoBehaviour
     {
-        public MeshRenderer renderer;
+        public MeshRenderer Rend;
         Vector3 velocity;
         float startScale, endScale, life, t, drag, gravity;
 
@@ -232,7 +232,7 @@ namespace OpenCity
             t = 0f;
             drag = dragCoef;
             gravity = grav;
-            if (renderer != null) renderer.sharedMaterial = mat;
+            if (Rend != null) Rend.sharedMaterial = mat;
         }
 
         void Update()

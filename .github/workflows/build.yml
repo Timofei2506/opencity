@@ -35,12 +35,6 @@ jobs:
             method: OpenCity.EditorTools.BuildScript.BuildWindowsCI
             output: build/Windows64
             artifact: OpenCity-Windows64
-          - name: Linux 64-bit
-            target: StandaloneLinux64
-            image: unityci/editor:ubuntu-2022.3.20f1-linux-il2cpp-3.2.2
-            method: OpenCity.EditorTools.BuildScript.BuildLinuxCI
-            output: build/Linux64
-            artifact: OpenCity-Linux64
 
     steps:
       - name: Checkout

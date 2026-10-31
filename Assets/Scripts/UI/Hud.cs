@@ -15,7 +15,7 @@ namespace OpenCity
 
         Image healthFill, armorFill, damageFlash, crosshairDot;
         Image[] crosshairParts;
-        Text moneyText, wantedText, weaponText, ammoText, clockText, objectiveText, messageText, starsText;
+        Text moneyText, wantedText, weaponText, ammoText, clockText, objectiveText, messageText;
         Text speedText, subtitleText;
         RawImage minimapImage;
         RectTransform minimapRoot;
@@ -79,7 +79,6 @@ namespace OpenCity
                                  new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-40f, -34f),
                                  new Vector2(420f, 60f), new Color(0.55f, 0.92f, 0.55f));
 
-            starsText = null;
             var starRow = MakeRect(canvas.transform, "Stars", new Vector2(1f, 1f), new Vector2(1f, 1f),
                                    new Vector2(-40f, -100f), new Vector2(260f, 44f));
             for (int i = 0; i < 5; i++)
