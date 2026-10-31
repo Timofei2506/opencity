@@ -68,11 +68,20 @@ jobs:
             Library-${{ matrix.target }}-
             Library-
 
-      - name: Diagnose runner and image
+      - name: Free disk space
         run: |
-          echo "CPU: $(nproc), RAM: $(free -g | awk '/Mem:/ {print $2}') GB, Disk: $(df -h / | awk 'NR==2 {print $4}') free"
+          echo "before:"; df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL \
+                      /usr/local/share/boost /usr/lib/jvm /opt/az 2>/dev/null || true
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          echo "after:"; df -h / | tail -1
+
+      - name: Pull Unity image
+        run: |
           docker pull "${{ matrix.image }}"
           docker image inspect "${{ matrix.image }}" --format 'image size: {{.Size}} bytes'
+          echo "CPU: $(nproc), RAM: $(free -g | awk '/Mem:/ {print $2}') GB"
+          echo "disk after pull:"; df -h / | tail -1
 
       - name: Activate Personal license and build
         env:
@@ -106,6 +115,7 @@ jobs:
                 exit 1
               fi
 
+              echo "== disk inside container =="; df -h /project | tail -1
               echo "== building ${{ matrix.target }}"
               /opt/unity/Editor/Unity -batchmode -nographics -quit \
                 -projectPath /project \
