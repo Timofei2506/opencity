@@ -85,7 +85,9 @@
 
 ## 3. Сборка в GitHub Actions
 
-Сборка выполняется через [game-ci](https://game.ci) на официальных Docker-образах Unity.
+Сборка выполняется на официальных Docker-образах Unity (`unityci/editor:ubuntu-2022.3.20f1-*`),
+которые workflow запускает напрямую через `docker run`. В одном контейнере происходит активация
+лицензии и сборка плеера вызовом `Assets/Editor/BuildScript.cs` (`-executeMethod`).
 
 ### 3.1. Обязательные секреты репозитория
 
@@ -95,30 +97,38 @@
 |---|---|---|
 | `UNITY_EMAIL` | да | e-mail аккаунта Unity ID |
 | `UNITY_PASSWORD` | да | пароль Unity ID |
-| `UNITY_LICENSE` | для Personal | содержимое `.ulf` файла лицензии (см. ниже) |
-| `UNITY_SERIAL` | для Plus/Pro | серийный номер |
+| `UNITY_TOTP_KEY` | при 2FA | секрет аутентификатора (если на аккаунте включена двухфакторная аутентификация) |
+| `UNITY_SERIAL` | только Plus/Pro | серийный номер подписки |
 
-**Если у вас Unity Personal:** помимо логина/пароля нужен файл лицензии:
+Файл лицензии в секретах **не нужен**. Перед сборкой CI получает Personal-место (seat) штатным
+клиентом лицензирования Unity:
 
-1. `Actions → Unity license → Run workflow` — workflow сгенерирует `.alf` файл.
-2. Скачайте артефакт `unity-activation-file`, загрузите `.alf` на https://license.unity3d.com/manual
-   и скачайте `.ulf`.
-3. Откройте `.ulf` в блокноте, скопируйте **всё** содержимое в секрет `UNITY_LICENSE`.
+```bash
+Unity.Licensing.Client --activate-all --include-personal \
+    --username "$UNITY_EMAIL" --password "$UNITY_PASSWORD"
+```
+
+> Ручная активация через https://license.unity3d.com/manual больше не используется: Unity оставила
+> офлайн-активацию `.alf → .ulf` только для Enterprise, для бесплатных мест она отключена.
+
+Проверить активацию отдельно: `Actions → Unity license → Run workflow`
+(артефакт `unity-license` содержит лог и состояние лицензии).
 
 ### 3.2. Запуск
 
-* Автоматически: `git push` в `main` (изменения в `.md` сборку не триггерят).
+* Автоматически: `git push` в `main` (изменения в `.md` и `Tools/` сборку не триггерят).
 * Вручную: `Actions → Build game → Run workflow`.
 
-Артефакты: `OpenCity-StandaloneWindows64` и `OpenCity-StandaloneLinux64` (хранятся 30 дней).
-Внутри — готовый билд (`.exe` / исполняемый файл + `OpenCity_Data`).
+Артефакты: `OpenCity-Windows64` и `OpenCity-Linux64` (хранятся 30 дней) — внутри готовый билд
+(`OpenCity.exe` / `OpenCity.x86_64` + `OpenCity_Data`). Логи Unity — в артефактах `logs-Standalone*`.
 
-> ⚠️ Репозиторий приватный: минуты Actions тарифицируются (2000/мес в бесплатном плане).
-> Одна сборка Unity занимает ~10–20 минут, кеш `Library` включён и ускоряет повторные сборки.
+Первая сборка занимает ~15–25 минут (импорт проекта), повторные — ~5–10 минут благодаря кешу `Library`.
+Репозиторий публичный, поэтому минуты GitHub Actions не тарифицируются.
 
 ### 3.3. Локальная сборка
 
-Откройте папку проекта в Unity Hub (версия **2022.3.20f1**), откройте `Assets/Scenes/Main.unity`,
+Меню `OpenCity → Build → Windows 64-bit` / `Linux 64-bit` собирает плеер в `build/` тем же
+скриптом, что использует CI. Для интерактивной проверки откройте папку проекта в Unity Hub (версия **2022.3.20f1**), откройте `Assets/Scenes/Main.unity`,
 нажмите Play. Меню `OpenCity → Apply project settings` повторно применяет настройки
 (цветовое пространство, шейдеры в Always Included, сцена в Build Settings).
 
@@ -201,8 +211,8 @@ Tools/gen_textures.py          генератор текстур (детерми
 | Симптом | Причина / решение |
 |---|---|
 | Розовые объекты в билде | шейдер вырезан — проверьте `OpenCity → Apply project settings` |
-| Сборка падает на активации лицензии | не заданы/просрочены `UNITY_*` секреты; для Personal нужен `UNITY_LICENSE` |
-| «Unsupported Unity version» в CI | версия отсутствует в game-ci; поменяйте `ProjectSettings/ProjectVersion.txt` |
+| Сборка падает на активации лицензии | неверные `UNITY_EMAIL`/`UNITY_PASSWORD`, включённая 2FA без `UNITY_TOTP_KEY`, либо для Plus/Pro не задан `UNITY_SERIAL` |
+| «Unsupported Unity version» в CI | нет Docker-образа `unityci/editor` под эту версию; выставьте существующий тег в `build.yml` и `ProjectSettings/ProjectVersion.txt` |
 | Тёмная сцена | не хватает памяти на shadow cascades — уменьшите `QualitySettings.shadowCascades` |
 | Нет звука | не должно быть: звук синтезируется; проверьте, что `ProceduralAudio.Engine` не null в логе |
 
