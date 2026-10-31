@@ -40,10 +40,10 @@ jobs:
             -w /project \
             "$UNITY_IMAGE" \
             bash -lc '
-              set -o pipefail
               apt-get update -qq >/dev/null 2>&1
               apt-get install -y -qq xvfb libgl1-mesa-dri libgl1 libglu1-mesa mesa-utils >/dev/null 2>&1 || true
-              echo "xvfb: $(which xvfb-run || echo MISSING)"
+              echo "xvfb-run: $(command -v xvfb-run || echo MISSING)"
+              echo "Xvfb: $(command -v Xvfb || echo MISSING)"
 
               CLIENT=$(find /opt/unity -name "Unity.Licensing.Client" -type f 2>/dev/null | head -1)
               chmod +x "$CLIENT" || true
@@ -51,19 +51,27 @@ jobs:
                  --username "$UNITY_EMAIL" --password "$UNITY_PASSWORD" > logs/activation.log 2>&1 \
                  || { cat logs/activation.log; echo "::error::License activation failed"; exit 1; }
 
-              glxinfo -B 2>/dev/null | head -8 || echo "glxinfo unavailable"
+              Xvfb :99 -screen 0 1600x900x24 -nolisten tcp > logs/xvfb.log 2>&1 &
+              XPID=$!
+              export DISPLAY=:99
+              sleep 3
+              echo "--- software GL ---"
+              (LIBGL_ALWAYS_SOFTWARE=1 glxinfo -B 2>&1 | head -8) || echo "glxinfo unavailable"
 
-              timeout -k 20 1500 xvfb-run -a -s "-screen 0 1600x900x24" \
-                /opt/unity/Editor/Unity -batchmode -projectPath /project \
+              # timeout kills Unity itself (SIGKILL after 15s), so a hung editor cannot
+              # block the job and we still get the log + artifacts.
+              timeout -k 15 900 /opt/unity/Editor/Unity -batchmode -projectPath /project \
                 -executeMethod OpenCity.EditorTools.ScreenshotTool.CaptureAll \
                 -logFile /project/logs/shots.log
               status=$?
               echo "Unity exit code: $status"
+              kill $XPID 2>/dev/null || true
 
               echo "=== screenshots ==="
               ls -la screenshots || true
-              echo "=== errors ==="
-              grep -nE "error CS|Exception|Screenshots\]|GfxDevice|Failed to initialize|OpenGL|OpenGLCore" logs/shots.log | tail -40 || true
+              echo "=== log highlights ==="
+              grep -nE "error CS|Exception|Screenshots\]|Failed to initialize|GfxDevice|OpenGL|shader" logs/shots.log | tail -40 || true
+              tail -n 30 logs/shots.log || true
             '
 
       - name: Upload screenshots
