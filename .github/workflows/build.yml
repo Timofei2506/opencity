@@ -1,0 +1,108 @@
+name: Build game
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'Tools/**'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: 'Platforms to build'
+        required: false
+        default: 'StandaloneWindows64,StandaloneLinux64'
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UNITY_VERSION: 2022.3.20f1
+
+jobs:
+  build:
+    name: Build ${{ matrix.targetPlatform }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    strategy:
+      fail-fast: false
+      matrix:
+        targetPlatform:
+          - StandaloneWindows64
+          - StandaloneLinux64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Verify Unity credentials
+        id: creds
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+        run: |
+          ok=1
+          if [ -z "$UNITY_LICENSE" ] && [ -z "$UNITY_SERIAL" ]; then
+            if [ -z "$UNITY_EMAIL" ] || [ -z "$UNITY_PASSWORD" ]; then ok=0; fi
+          fi
+          if [ "$ok" = "0" ]; then
+            echo "::error title=Unity credentials missing::Добавьте секреты репозитория UNITY_EMAIL и UNITY_PASSWORD (логин/пароль от Unity ID). Для Plus/Pro также можно добавить UNITY_SERIAL, а для Personal - UNITY_LICENSE (см. workflow 'Unity license')."
+            exit 1
+          fi
+          echo "Credentials present."
+
+      - name: Cache Library
+        uses: actions/cache@v4
+        with:
+          path: Library
+          key: Library-${{ matrix.targetPlatform }}-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          restore-keys: |
+            Library-${{ matrix.targetPlatform }}-
+            Library-
+
+      - name: Build with Unity
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+        with:
+          targetPlatform: ${{ matrix.targetPlatform }}
+          unityVersion: auto
+          buildsPath: build
+          allowDirtyBuild: true
+          versioning: None
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenCity-${{ matrix.targetPlatform }}
+          path: build
+          if-no-files-found: error
+          retention-days: 30
+
+  smoke-test:
+    name: Headless smoke test
+    runs-on: ubuntu-latest
+    needs: build
+    if: always() && needs.build.result == 'success'
+    steps:
+      - name: Download Linux build
+        uses: actions/download-artifact@v4
+        with:
+          name: OpenCity-StandaloneLinux64
+          path: build
+      - name: Report artifacts
+        run: |
+          echo "Build artifacts:"
+          find build -maxdepth 2 -type f | head -50

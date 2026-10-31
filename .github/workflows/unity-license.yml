@@ -1,0 +1,52 @@
+name: Unity license
+
+# Manual helper: generates the .alf activation file for a Personal license.
+# 1) Run this workflow (Actions -> Unity license -> Run workflow).
+# 2) Download the "unity-activation-file" artifact -> get the .alf file.
+# 3) Upload it to https://license.unity3d.com/manual and download the .ulf file.
+# 4) Copy the contents of the .ulf into the repository secret UNITY_LICENSE.
+#
+# If you already store UNITY_EMAIL / UNITY_PASSWORD (Unity ID credentials) the build
+# workflow can activate a Personal license on its own in most setups.
+
+on:
+  workflow_dispatch:
+    inputs:
+      unityVersion:
+        description: 'Unity version (leave empty to use ProjectSettings/ProjectVersion.txt)'
+        required: false
+        default: ''
+
+jobs:
+  request-activation-file:
+    name: Request activation file
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: game-ci/unity-request-activation-file@v2
+        id: getManualLicenseFile
+        with:
+          unityVersion: ${{ github.event.inputs.unityVersion }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unity-activation-file
+          path: ${{ steps.getManualLicenseFile.outputs.filePath }}
+
+  check-license:
+    name: Check stored license
+    runs-on: ubuntu-latest
+    needs: request-activation-file
+    steps:
+      - uses: actions/checkout@v4
+      - name: License secret status
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          if [ -n "$UNITY_LICENSE" ]; then echo "UNITY_LICENSE is set ($(echo -n "$UNITY_LICENSE" | wc -c) bytes)";
+          else echo "UNITY_LICENSE is NOT set"; fi
+          if [ -n "$UNITY_EMAIL" ]; then echo "UNITY_EMAIL is set"; else echo "UNITY_EMAIL is NOT set"; fi
+          if [ -n "$UNITY_PASSWORD" ]; then echo "UNITY_PASSWORD is set"; else echo "UNITY_PASSWORD is NOT set"; fi
