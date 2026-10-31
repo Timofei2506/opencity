@@ -72,14 +72,14 @@ namespace OpenCity.EditorTools
         }
 
 
-        /// <summary>Logs every huge renderer - used to find geometry that hides the roads.</summary>
         static Light FindSun()
         {
-            foreach (var l in FindObjectsOfType<Light>(true))
+            foreach (var l in UnityEngine.Object.FindObjectsOfType<Light>(true))
                 if (l.type == LightType.Directional) return l;
             return null;
         }
 
+        /// <summary>Logs lighting state and every huge renderer - used to find geometry that hides the roads.</summary>
         static void DumpGiants()
         {
             var renderers = UnityEngine.Object.FindObjectsOfType<MeshRenderer>();
@@ -94,7 +94,7 @@ namespace OpenCity.EditorTools
             if (sun != null)
                 Debug.Log("[Screenshots] sun='" + sun.name + "' intensity=" + sun.intensity.ToString("0.00")
                           + " color=" + sun.color.ToString("0.00") + " euler=" + sun.transform.eulerAngles.ToString("0"));
-            var cycle = FindObjectOfType<OpenCity.DayNightCycle>();
+            var cycle = UnityEngine.Object.FindObjectOfType<OpenCity.DayNightCycle>();
             if (cycle != null)
             {
                 Debug.Log("[Screenshots] dayNight hour=" + cycle.Hour.ToString("0.00")
