@@ -474,7 +474,7 @@ namespace OpenCity
                 return;
             }
 
-            Vector3 dir;
+            Vector3 dir = Vector3.zero;
             target = gm != null && gm.Roads != null
                 ? gm.Roads.RandomSpawn(new System.Random(Random.Range(0, 99999)), out dir)
                 : Vector3.zero;
