@@ -1,0 +1,55 @@
+name: Render probe
+
+# Изолированный рендер-тест примитивов (пустая сцена): нужен, чтобы отличать
+# проблемы материалов/примитивов от проблем сцены. Запуск вручную.
+
+on:
+  workflow_dispatch:
+
+env:
+  UNITY_IMAGE: unityci/editor:ubuntu-2022.3.20f1-base-3.2.2
+
+jobs:
+  probe:
+    name: Render probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pull image
+        run: docker pull "$UNITY_IMAGE"
+      - name: Run probe
+        id: probe
+        continue-on-error: true
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          mkdir -p Library logs screenshots
+          docker run --rm \
+            -e UNITY_EMAIL -e UNITY_PASSWORD \
+            -e LIBGL_ALWAYS_SOFTWARE=1 -e GALLIUM_DRIVER=llvmpipe \
+            -v "$PWD:/project" -w /project \
+            "$UNITY_IMAGE" \
+            bash -lc '
+              apt-get update -qq >/dev/null 2>&1
+              apt-get install -y -qq xvfb libgl1-mesa-dri libgl1 libglu1-mesa >/dev/null 2>&1 || true
+              CLIENT=$(find /opt/unity -name "Unity.Licensing.Client" -type f | head -1)
+              chmod +x "$CLIENT"
+              "$CLIENT" --activate-all --include-personal --username "$UNITY_EMAIL" --password "$UNITY_PASSWORD" > logs/activation.log 2>&1 || { cat logs/activation.log; exit 1; }
+              Xvfb :99 -screen 0 1600x900x24 -nolisten tcp > logs/xvfb.log 2>&1 &
+              export DISPLAY=:99
+              sleep 3
+              timeout -k 10 900 /opt/unity/Editor/Unity -batchmode -projectPath /project \
+                -executeMethod OpenCity.EditorTools.DiagnosticsTool.Run -logFile /project/logs/diag.log
+              echo "exit=$?"
+              grep -E "Diagnostics\]" logs/diag.log | tail -40 || true
+            '
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: diag
+          path: |
+            screenshots
+            logs
+          if-no-files-found: warn

@@ -651,6 +651,7 @@ def main():
     out = args.out
     os.makedirs(out, exist_ok=True)
 
+    fsize = max(768, size)
     rng = np.random.default_rng(20251031)
     print(f"[gen_textures] target={out} size={size}x{size}")
 
@@ -669,19 +670,19 @@ def main():
         ("circle_mask", lambda: tex_circle_mask(256, out)),
         ("ui_panel", lambda: tex_ui_panel(32, out)),
         ("billboard", lambda: tex_billboard(size, rng, out)),
-        ("facade_concrete", lambda: facade_windows(
-            size, rng, out, "facade_concrete", floors=4, cols=4,
-            wall=(0.56, 0.55, 0.52), lit_chance=0.28,
-            frame=(0.22, 0.22, 0.23), glass=(0.09, 0.12, 0.15))),
-        ("facade_brick", lambda: facade_windows(
-            size, rng, out, "facade_brick", floors=5, cols=5,
+        ("facade_concrete", lambda: facade_pro(
+            fsize, rng, out, "facade_concrete", floors=4, cols=4,
+            wall=(0.58, 0.57, 0.54), lit_chance=0.30,
+            frame_col=(0.24, 0.24, 0.25), glass=(0.07, 0.10, 0.13))),
+        ("facade_brick", lambda: facade_pro(
+            fsize, rng, out, "facade_brick", floors=4, cols=4,
             wall=(0.40, 0.21, 0.15), lit_chance=0.34, brick=True,
-            frame=(0.30, 0.26, 0.24), glass=(0.08, 0.10, 0.13))),
-        ("facade_panel", lambda: facade_windows(
-            size, rng, out, "facade_panel", floors=6, cols=5,
-            wall=(0.66, 0.64, 0.60), lit_chance=0.22,
-            frame=(0.34, 0.34, 0.35), glass=(0.10, 0.14, 0.17))),
-        ("facade_glass", lambda: facade_curtain_wall(size, rng, out)),
+            frame_col=(0.72, 0.70, 0.66), glass=(0.07, 0.09, 0.12))),
+        ("facade_panel", lambda: facade_pro(
+            fsize, rng, out, "facade_panel", floors=5, cols=4,
+            wall=(0.66, 0.64, 0.60), lit_chance=0.24,
+            frame_col=(0.30, 0.30, 0.31), glass=(0.08, 0.12, 0.15))),
+        ("facade_glass", lambda: facade_curtain_pro(fsize, rng, out)),
     ]
 
     total = 0
@@ -691,6 +692,273 @@ def main():
     for f in sorted(os.listdir(out)):
         total += os.path.getsize(os.path.join(out, f))
     print(f"[gen_textures] {len(os.listdir(out))} files, {total / 1024.0 / 1024.0:.2f} MiB")
+
+
+
+# --------------------------------------------------------------------------------------
+# v2 building facades: recessed windows, frames, glass with sky reflection, blinds,
+# curtains, sills with drip stains, floor slabs and a dedicated ambient-occlusion map
+# --------------------------------------------------------------------------------------
+
+def save_ao(path, ao):
+    """Ambient occlusion map for Unity's Standard shader (_OcclusionMap, R channel)."""
+    Image.fromarray(to_u8(np.clip(ao, 0.0, 1.0)), "L").save(path, optimize=True)
+
+
+def _vstreaks(size, rng, freq=5, contrast=0.10):
+    """Vertical dirt/water streaks, tileable in both axes."""
+    n = rng.random((freq,)) * 0.7 + rng.random((freq,)) * 0.3
+    n = np.interp(np.linspace(0, freq, size, endpoint=False), np.arange(freq), n)
+    n = n / max(n.max(), 1e-6)
+    field = np.tile(n[None, :], (size, 1))
+    detail = fbm(size, 32, 3, rng) * 0.35
+    return np.clip(1.0 - contrast * (1.0 - (field * 0.8 + detail)), 0.0, 2.0)
+
+
+def facade_pro(size, rng, out, name="facade_concrete", floors=4, cols=4,
+               wall=(0.56, 0.55, 0.52), brick=False, frame_col=(0.78, 0.78, 0.76),
+               glass=(0.07, 0.10, 0.13), lit_chance=0.32, floor_band=True):
+    """Rich, tileable facade unit.
+
+    Every window is drawn as a recessed opening: reveal shadow -> frame -> mullion ->
+    glass with a vertical sky reflection and a diagonal highlight, optionally with
+    blinds or curtains. Sills have drip stains, floors have slab bands, and the whole
+    tile gets vertical grime plus an AO map.
+    """
+    ss = 2
+    S = size * ss
+    img = np.zeros((S, S, 3))
+    height = np.zeros((S, S))
+    emis = np.zeros((S, S, 3))
+    smooth = np.zeros((S, S))
+    metal = np.zeros((S, S))
+    ao = np.ones((S, S))
+
+    # ---- wall base -------------------------------------------------------------
+    if brick:
+        bi, bh = brick_pattern(S, rng, rows=max(10, S // 40), cols=max(5, S // 80))
+        img[:] = bi
+        height[:] = bh * 0.55
+        smooth[:] = 0.12
+    else:
+        fine = _noise_field(S, rng, 96)
+        mid = _noise_field(S, rng, 9)
+        coarse = _noise_field(S, rng, 3)
+        shade = 0.90 + 0.10 * fine + 0.06 * mid + 0.05 * coarse
+        img[:] = np.array(wall)[None, None, :] * shade[:, :, None]
+        height[:] = 0.55 + 0.05 * mid
+        smooth[:] = 0.10 + 0.05 * fine
+
+    # ---- floor slabs -----------------------------------------------------------
+    fh = S // floors
+    cw = S // cols
+    slab = max(2, S // 260)
+    if floor_band:
+        for f in range(floors):
+            y = f * fh
+            img[y:y + slab, :, :] *= 1.12
+            height[y:y + slab, :] = 0.72
+            ao[max(0, y - slab // 2):y + slab, :] *= 0.86
+
+    # ---- window grid -----------------------------------------------------------
+    reveal = max(2, S // 210)
+    frame_w = max(2, S // 240)
+    sill_h = max(3, S // 150)
+    win_w = int(cw * 0.56)
+    win_h = int(fh * 0.52)
+
+    for f in range(floors):
+        for c in range(cols):
+            x0 = c * cw + (cw - win_w) // 2
+            y0 = f * fh + int(fh * 0.30)
+            x1, y1 = x0 + win_w, y0 + win_h
+
+            # --- reveal: recessed opening with an inner shadow -----------------
+            img[y0 - reveal:y1 + reveal, x0 - reveal:x1 + reveal] *= 0.66
+            height[y0 - reveal:y1 + reveal, x0 - reveal:x1 + reveal] = 0.30
+            ao[y0 - reveal:y1 + reveal, x0 - reveal:reveal] *= 0.55
+            ao[y0 - reveal:y1 + reveal, x1:x1 + reveal] *= 0.55
+            ao[y0 - reveal:y0, x0 - reveal:x1 + reveal] *= 0.50
+            ao[y1:y1 + reveal, x0 - reveal:x1 + reveal] *= 0.65
+
+            # --- frame ---------------------------------------------------------
+            img[y0:y1, x0:x1] = frame_col
+            height[y0:y1, x0:x1] = 0.40
+            smooth[y0:y1, x0:x1] = 0.34
+            metal[y0:y1, x0:x1] = 0.25
+
+            # --- glass ---------------------------------------------------------
+            gx0, gy0, gx1, gy1 = x0 + frame_w, y0 + frame_w, x1 - frame_w, y1 - frame_w
+            gh, gw = gy1 - gy0, gx1 - gx0
+            if gh < 4 or gw < 4:
+                continue
+
+            vgrad = np.linspace(1.0, 0.25, gh)[:, None]          # bright sky at the top
+            hgrad = np.linspace(0.80, 1.05, gw)[None, :]         # sun side
+            pane = np.zeros((gh, gw, 3))
+            tint = 0.85 + 0.3 * rng.random()
+            for ch in range(3):
+                pane[:, :, ch] = glass[ch] * tint * (0.30 + 1.55 * vgrad) * hgrad
+
+            # diagonal reflection streak across the pane
+            yy, xx = np.mgrid[0:gh, 0:gw]
+            streak_phase = rng.random() * 6.0
+            streak = np.clip(np.sin((xx * 0.55 + yy * 0.85) * 0.06 + streak_phase), 0.0, 1.0)
+            pane += (streak ** 6)[:, :, None] * np.array([0.22, 0.26, 0.30])
+
+            # interior: blinds / curtains / dark room
+            kind = rng.random()
+            if kind < 0.22:                       # venetian blinds
+                lines = ((yy * 1.0) % max(3, gh // 22)) < 1.4
+                blind_col = np.array([0.62, 0.60, 0.56]) * (0.75 + 0.3 * rng.random())
+                pane[lines] = blind_col
+                smooth[gy0:gy1, gx0:gx1] = 0.55
+                metal[gy0:gy1, gx0:gx1] = 0.10
+            elif kind < 0.34:                     # curtains on the sides
+                cur = np.array([0.55, 0.42, 0.38]) * (0.7 + 0.5 * rng.random())
+                folds = (0.75 + 0.25 * np.sin(xx * 0.35))[:, :, None]
+                cover = int(gw * (0.18 + 0.22 * rng.random()))
+                pane[:, :cover] = cur * folds[:, :cover]
+                pane[:, gw - cover:] = cur * folds[:, gw - cover:]
+                smooth[gy0:gy1, gx0:gx1] = 0.62
+            else:
+                smooth[gy0:gy1, gx0:gx1] = 0.92
+                metal[gy0:gy1, gx0:gx1] = 0.72
+
+            img[gy0:gy1, gx0:gx1] = np.clip(pane, 0.0, 1.0)
+            height[gy0:gy1, gx0:gx1] = 0.24
+
+            # --- mullion -------------------------------------------------------
+            if gw > 26:
+                mx = gw // 2
+                img[gy0:gy1, gx0 + mx:gx0 + mx + max(1, frame_w // 2)] = frame_col
+                height[gy0:gy1, gx0 + mx:gx0 + mx + max(1, frame_w // 2)] = 0.36
+
+            # --- lit apartment --------------------------------------------------
+            if rng.random() < lit_chance:
+                warm = np.array([1.0, 0.80, 0.52]) if rng.random() > 0.12 else np.array([0.55, 0.72, 1.0])
+                power = 0.55 + 0.45 * rng.random()
+                glow = warm[None, None, :] * power * np.linspace(1.0, 0.55, gh)[:, None, None]
+                emis[gy0:gy1, gx0:gx1] = glow
+                img[gy0:gy1, gx0:gx1] = np.clip(img[gy0:gy1, gx0:gx1] + glow * 0.22, 0, 1)
+
+            # --- sill with drip stain ------------------------------------------
+            img[y1:y1 + sill_h, x0 - reveal:x1 + reveal] *= 1.22
+            height[y1:y1 + sill_h, x0 - reveal:x1 + reveal] = 0.85
+            ao[y1 - 1:y1 + sill_h + 2, x0 - reveal:x1 + reveal] = 0.75
+            drip = float(np.clip(rng.random() * 0.5 + 0.5, 0, 1))
+            dl = min(int(fh * (0.10 + 0.16 * rng.random())), S - (y1 + sill_h))
+            if dl > 1:
+                stain = np.linspace(0.92, 1.0, dl)[:, None, None]
+                rows = slice(y1 + sill_h, y1 + sill_h + dl)
+                img[rows, x0:x1] = img[rows, x0:x1] * stain * (0.94 + 0.06 * drip)
+
+            # --- lintel ---------------------------------------------------------
+            img[y0 - sill_h:y0, x0 - reveal:x1 + reveal] *= 0.86
+            height[y0 - sill_h:y0, x0 - reveal:x1 + reveal] = 0.34
+
+    # ---- weathering ------------------------------------------------------------
+    streaks = _vstreaks(S, rng, freq=max(3, cols * 2), contrast=0.16)
+    img *= streaks[:, :, None]
+    grime = normalize01(fbm(S, 5, 5, rng))
+    img *= (0.90 + 0.16 * grime)[:, :, None]
+    img = np.clip(img, 0.0, 1.0)
+
+    def down(a, mode=Image.LANCZOS):
+        return downsample(a, size, mode)
+
+    small = max(256, size // 2)
+    save_rgb(os.path.join(out, f"{name}_d.png"), down(img))
+    save_normal(os.path.join(out, f"{name}_n.png"), normalize01(down(height)), 3.2)
+    save_mg(os.path.join(out, f"{name}_mg.png"),
+            down(metal, Image.BILINEAR), down(smooth, Image.BILINEAR))
+    save_ao(os.path.join(out, f"{name}_o.png"), down(ao, Image.BILINEAR))
+    save_rgb(os.path.join(out, f"{name}_e.png"), down(emis))
+
+
+def facade_curtain_pro(size, rng, out, name="facade_glass", cols=4, rows=6):
+    """Modern curtain wall: big panes, slim mullions, real glass reflections."""
+    ss = 2
+    S = size * ss
+    img = np.zeros((S, S, 3))
+    height = np.zeros((S, S))
+    smooth = np.zeros((S, S))
+    metal = np.zeros((S, S))
+    ao = np.ones((S, S))
+    emis = np.zeros((S, S, 3))
+
+    img[:] = 0.05
+    height[:] = 0.2
+
+    cw = S // cols
+    rh = S // rows
+    mull = max(2, S // 200)
+    spandrel = max(3, rh // 6)   # opaque band between floors
+
+    yy, xx = np.mgrid[0:S, 0:S]
+
+    for c in range(cols):
+        for r in range(rows):
+            x0, x1 = c * cw + mull, (c + 1) * cw - mull
+            y0, y1 = r * rh + mull + spandrel, (r + 1) * rh - mull
+            gh, gw = y1 - y0, x1 - x0
+            if gh < 6 or gw < 6:
+                continue
+
+            vg = np.linspace(1.0, 0.18, gh)[:, None]
+            hg = np.linspace(0.85, 1.10, gw)[None, :]
+            tint = 0.85 + 0.35 * rng.random()
+            pane = np.zeros((gh, gw, 3))
+            base = np.array([0.075, 0.115, 0.145]) * tint
+            for ch in range(3):
+                pane[:, :, ch] = base[ch] * (0.35 + 1.6 * vg) * hg
+
+            ly = yy[y0:y1, x0:x1]
+            lx = xx[y0:y1, x0:x1]
+            streak = np.clip(np.sin((lx * 0.5 + ly * 0.9) * 0.05 + rng.random() * 6.0), 0, 1)
+            pane += (streak ** 5)[:, :, None] * np.array([0.26, 0.30, 0.34])
+
+            # a horizontal band of sky reflection near the top
+            band = np.clip(1.0 - np.abs((ly - y0) - gh * 0.18) / max(1.0, gh * 0.10), 0, 1)
+            pane += band[:, :, None] * np.array([0.10, 0.13, 0.16])
+
+            img[y0:y1, x0:x1] = np.clip(pane, 0, 1)
+            smooth[y0:y1, x0:x1] = 0.94
+            metal[y0:y1, x0:x1] = 0.78
+            height[y0:y1, x0:x1] = 0.30
+
+            if rng.random() < 0.22:
+                glow = np.array([0.95, 0.90, 0.78]) * (0.35 + 0.4 * rng.random())
+                emis[y0:y1, x0:x1] = glow
+                img[y0:y1, x0:x1] = np.clip(img[y0:y1, x0:x1] + glow * 0.10, 0, 1)
+
+    # mullion grid + spandrel panels
+    for c in range(cols + 1):
+        x = min(c * cw, S - 1)
+        img[:, max(0, x - mull):x + mull] = np.array([0.20, 0.21, 0.22])
+        smooth[:, max(0, x - mull):x + mull] = 0.42
+        metal[:, max(0, x - mull):x + mull] = 0.55
+        height[:, max(0, x - mull):x + mull] = 0.62
+        ao[:, max(0, x - mull // 2):x + mull] *= 0.85
+
+    for r in range(rows + 1):
+        y = min(r * rh, S - 1)
+        img[max(0, y - spandrel):y + mull, :] = np.array([0.34, 0.34, 0.33])
+        height[max(0, y - spandrel):y + mull, :] = 0.55
+        smooth[max(0, y - spandrel):y + mull, :] = 0.25
+        ao[max(0, y - spandrel - 2):y + mull, :] *= 0.80
+
+    img *= _vstreaks(S, rng, freq=max(4, cols * 2), contrast=0.12)[:, :, None]
+    img = np.clip(img, 0, 1)
+
+    def down(a, mode=Image.LANCZOS):
+        return downsample(a, size, mode)
+
+    save_rgb(os.path.join(out, f"{name}_d.png"), down(img))
+    save_normal(os.path.join(out, f"{name}_n.png"), normalize01(down(height)), 2.6)
+    save_mg(os.path.join(out, f"{name}_mg.png"), down(metal, Image.BILINEAR), down(smooth, Image.BILINEAR))
+    save_ao(os.path.join(out, f"{name}_o.png"), down(ao, Image.BILINEAR))
+    save_rgb(os.path.join(out, f"{name}_e.png"), down(emis))
 
 
 if __name__ == "__main__":
