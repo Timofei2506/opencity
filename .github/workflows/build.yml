@@ -37,7 +37,7 @@ jobs:
             artifact: OpenCity-Windows64
           - name: Linux 64-bit
             target: StandaloneLinux64
-            image: unityci/editor:ubuntu-2022.3.20f1-base-3.2.2
+            image: unityci/editor:ubuntu-2022.3.20f1-linux-il2cpp-3.2.2
             method: OpenCity.EditorTools.BuildScript.BuildLinuxCI
             output: build/Linux64
             artifact: OpenCity-Linux64
@@ -117,7 +117,7 @@ jobs:
 
               echo "== disk =="; cat logs/disk.txt
               echo "== building ${{ matrix.target }} =="
-              timeout 3600 /opt/unity/Editor/Unity -batchmode -nographics -quit \
+              timeout 1500 /opt/unity/Editor/Unity -batchmode -nographics -quit \
                 -projectPath /project \
                 -buildTarget ${{ matrix.target }} \
                 -executeMethod ${{ matrix.method }} \
@@ -129,7 +129,7 @@ jobs:
               status=$?
               kill $TPID 2>/dev/null || true
               echo "Unity exit code: $status"
-              [ $status -eq 124 ] && echo "::error::Unity build timed out after 60 min"
+              [ $status -eq 124 ] && echo "::error::Unity build timed out after 25 min"
               ls -la "${{ matrix.output }}" 2>/dev/null || true
               exit $status
             '
