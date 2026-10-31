@@ -17,6 +17,18 @@ namespace OpenCity
     {
         // ------------------------------------------------------------------ primitives
 
+        /// <summary>
+        /// Finalises a procedurally built mesh. RecalculateBounds is mandatory: a mesh
+        /// created with "new Mesh()" starts with a zero-sized bounding box, and Unity
+        /// frustum-culls a renderer by that box - a single quad (the ground plane, decals,
+        /// big props) disappears as soon as the world origin is off screen.
+        /// </summary>
+        static Mesh Finish(Mesh m)
+        {
+            m.RecalculateBounds();
+            return m;
+        }
+
         static void AddQuad(List<Vector3> v, List<Vector3> n, List<Vector2> uv, List<int> t,
                             Vector3 center, Vector3 u, Vector3 w, float hu, float hw,
                             Vector2 uvScale, Vector2 uvOffset)
@@ -66,7 +78,7 @@ namespace OpenCity
             m.SetUVs(0, uv);
             m.SetTriangles(t, 0);
             m.RecalculateTangents();
-            return m;
+            return Finish(m);
         }
 
         /// <summary>Flat quad in the XY plane, facing -Z (like Unity's built-in Quad).</summary>
@@ -81,7 +93,7 @@ namespace OpenCity
             var m = new Mesh { name = "Quad" };
             m.SetVertices(v); m.SetNormals(n); m.SetUVs(0, uv); m.SetTriangles(t, 0);
             m.RecalculateTangents();
-            return m;
+            return Finish(m);
         }
 
         /// <summary>
@@ -98,7 +110,7 @@ namespace OpenCity
             var m = new Mesh { name = "QuadOriented" };
             m.SetVertices(v); m.SetNormals(n); m.SetUVs(0, uv); m.SetTriangles(t, 0);
             m.RecalculateTangents();
-            return m;
+            return Finish(m);
         }
 
         /// <summary>Flat quad in the XZ plane facing +Y (roads, markings, decals).</summary>
@@ -113,7 +125,7 @@ namespace OpenCity
             var m = new Mesh { name = "GroundQuad" };
             m.SetVertices(v); m.SetNormals(n); m.SetUVs(0, uv); m.SetTriangles(t, 0);
             m.RecalculateTangents();
-            return m;
+            return Finish(m);
         }
 
         /// <summary>Cylinder along +Y with caps.</summary>
@@ -184,7 +196,7 @@ namespace OpenCity
             var m = new Mesh { name = "Cylinder" };
             m.SetVertices(v); m.SetNormals(n); m.SetUVs(0, uv); m.SetTriangles(t, 0);
             m.RecalculateTangents();
-            return m;
+            return Finish(m);
         }
 
         /// <summary>Surface of revolution around +Y. Profile entries are (radius, y).</summary>
@@ -229,7 +241,7 @@ namespace OpenCity
             m.SetVertices(v); m.SetNormals(n); m.SetUVs(0, uv); m.SetTriangles(t, 0);
             if (smooth) m.RecalculateNormals();
             m.RecalculateTangents();
-            return m;
+            return Finish(m);
         }
 
         /// <summary>Helper: capsule-ish lathe profile from bottom to top.</summary>
@@ -394,7 +406,7 @@ namespace OpenCity
             m.SetVertices(v); m.SetUVs(0, uv); m.SetTriangles(t, 0);
             m.RecalculateNormals();
             m.RecalculateTangents();
-            return m;
+            return Finish(m);
         }
 
         // ------------------------------------------------------------------ ops
@@ -412,7 +424,7 @@ namespace OpenCity
             m.vertices = verts;
             m.normals = normals;
             m.RecalculateTangents();
-            return m;
+            return Finish(m);
         }
 
         public static Mesh Wheel(float radius, float width, int segments = 18)

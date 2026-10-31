@@ -187,15 +187,22 @@ namespace OpenCity.EditorTools
         static Vector3 FindWall(Vector3 origin, out Vector3 normal)
         {
             normal = Vector3.forward;
-            Vector3[] dirs = { Vector3.forward, Vector3.right, Vector3.back, Vector3.left };
-            for (int i = 0; i < dirs.Length; i++)
+            float[] heights = { 0f, 3f, 7f, 12f };
+            for (int h = 0; h < heights.Length; h++)
             {
-                if (Physics.Raycast(origin, dirs[i], out RaycastHit hit, 60f))
+                Vector3 o = origin + Vector3.up * heights[h];
+                for (int a = 0; a < 24; a++)
                 {
-                    normal = hit.normal;
-                    normal.y = 0f;
-                    normal.Normalize();
-                    return hit.point;
+                    float ang = a * 15f;
+                    Vector3 dir = Quaternion.Euler(0f, ang, 0f) * Vector3.forward;
+                    if (Physics.Raycast(o, dir, out RaycastHit hit, 150f))
+                    {
+                        if (Mathf.Abs(hit.normal.y) > 0.7f) continue;   // ground, not a wall
+                        normal = hit.normal;
+                        normal.y = 0f;
+                        normal.Normalize();
+                        return hit.point;
+                    }
                 }
             }
             return Vector3.zero;
