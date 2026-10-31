@@ -10,11 +10,6 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      platforms:
-        description: 'Platforms to build'
-        required: false
-        default: 'StandaloneWindows64,StandaloneLinux64'
 
 concurrency:
   group: build-${{ github.ref }}
@@ -22,19 +17,30 @@ concurrency:
 
 env:
   UNITY_VERSION: 2022.3.20f1
+  IMAGE_TAG: 3.2.2
 
 jobs:
   build:
-    name: Build ${{ matrix.targetPlatform }}
+    name: Build ${{ matrix.name }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
 
     strategy:
       fail-fast: false
       matrix:
-        targetPlatform:
-          - StandaloneWindows64
-          - StandaloneLinux64
+        include:
+          - name: Windows 64-bit
+            target: StandaloneWindows64
+            image: unityci/editor:ubuntu-2022.3.20f1-windows-mono-3.2.2
+            method: OpenCity.EditorTools.BuildScript.BuildWindowsCI
+            output: build/Windows64
+            artifact: OpenCity-Windows64
+          - name: Linux 64-bit
+            target: StandaloneLinux64
+            image: unityci/editor:ubuntu-2022.3.20f1-base-3.2.2
+            method: OpenCity.EditorTools.BuildScript.BuildLinuxCI
+            output: build/Linux64
+            artifact: OpenCity-Linux64
 
     steps:
       - name: Checkout
@@ -43,66 +49,113 @@ jobs:
           lfs: false
 
       - name: Verify Unity credentials
-        id: creds
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
         run: |
-          ok=1
-          if [ -z "$UNITY_LICENSE" ] && [ -z "$UNITY_SERIAL" ]; then
-            if [ -z "$UNITY_EMAIL" ] || [ -z "$UNITY_PASSWORD" ]; then ok=0; fi
-          fi
-          if [ "$ok" = "0" ]; then
-            echo "::error title=Unity credentials missing::Добавьте секреты репозитория UNITY_EMAIL и UNITY_PASSWORD (логин/пароль от Unity ID). Для Plus/Pro также можно добавить UNITY_SERIAL, а для Personal - UNITY_LICENSE (см. workflow 'Unity license')."
+          if [ -z "$UNITY_EMAIL" ] || [ -z "$UNITY_PASSWORD" ]; then
+            echo "::error title=Нет учётных данных Unity::Добавьте секреты репозитория UNITY_EMAIL и UNITY_PASSWORD (логин и пароль Unity ID)."
             exit 1
           fi
           echo "Credentials present."
 
-      - name: Cache Library
+      - name: Cache Unity Library
         uses: actions/cache@v4
         with:
           path: Library
-          key: Library-${{ matrix.targetPlatform }}-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          key: Library-${{ matrix.target }}-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
           restore-keys: |
-            Library-${{ matrix.targetPlatform }}-
+            Library-${{ matrix.target }}-
             Library-
 
-      - name: Build with Unity
-        uses: game-ci/unity-builder@v4
+      - name: Diagnose runner and image
+        run: |
+          echo "CPU: $(nproc), RAM: $(free -g | awk '/Mem:/ {print $2}') GB, Disk: $(df -h / | awk 'NR==2 {print $4}') free"
+          docker pull "${{ matrix.image }}"
+          docker image inspect "${{ matrix.image }}" --format 'image size: {{.Size}} bytes'
+
+      - name: Activate Personal license and build
         env:
-          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-        with:
-          targetPlatform: ${{ matrix.targetPlatform }}
-          unityVersion: auto
-          buildsPath: build
-          allowDirtyBuild: true
-          versioning: None
+        run: |
+          mkdir -p Library "${{ matrix.output }}" logs
+          docker run --rm \
+            -e UNITY_EMAIL \
+            -e UNITY_PASSWORD \
+            -v "$PWD:/project" \
+            -w /project \
+            "${{ matrix.image }}" \
+            bash -lc '
+              set -o pipefail
+
+              CLIENT=$(find /opt/unity -name "Unity.Licensing.Client" -type f 2>/dev/null | head -1)
+              if [ -z "$CLIENT" ]; then
+                echo "::error::Unity.Licensing.Client not found in image"
+                exit 1
+              fi
+              chmod +x "$CLIENT" || true
+              echo "== licensing client: $CLIENT"
+              if ! "$CLIENT" --activate-all --include-personal \
+                     --username "$UNITY_EMAIL" --password "$UNITY_PASSWORD" 2>&1 | tee logs/activation.log; then
+                echo "::error title=Активация лицензии не удалась::Проверьте UNITY_EMAIL/UNITY_PASSWORD (и 2FA) — см. logs/activation.log"
+                exit 1
+              fi
+              if grep -qi "Unauthorized\|Invalid Credential" logs/activation.log; then
+                echo "::error title=Unity отклонил учётные данные::Проверьте пароль Unity ID или включённую двухфакторную аутентификацию"
+                exit 1
+              fi
+
+              echo "== building ${{ matrix.target }}"
+              /opt/unity/Editor/Unity -batchmode -nographics -quit \
+                -projectPath /project \
+                -buildTarget ${{ matrix.target }} \
+                -executeMethod ${{ matrix.method }} \
+                -logFile - 2>&1 | tee logs/build.log
+              status=${PIPESTATUS[0]}
+              echo "Unity exit code: $status"
+              exit $status
+            '
+
+      - name: Show build log tail on failure
+        if: failure()
+        run: |
+          tail -n 120 logs/build.log 2>/dev/null || true
+          grep -E "error CS[0-9]+|Scripts have compiler errors|Aborting batchmode" logs/build.log 2>/dev/null | head -60 || true
+
+      - name: Verify build output
+        run: |
+          echo "=== ${{ matrix.output }} ==="
+          find "${{ matrix.output }}" -maxdepth 2 -type f | head -30
+          test -n "$(find "${{ matrix.output }}" -maxdepth 1 -type f -name 'OpenCity*' -print -quit)" \
+            || { echo "::error::Executable not produced"; exit 1; }
 
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:
-          name: OpenCity-${{ matrix.targetPlatform }}
-          path: build
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.output }}
           if-no-files-found: error
           retention-days: 30
 
-  smoke-test:
-    name: Headless smoke test
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.target }}
+          path: logs
+          if-no-files-found: ignore
+          retention-days: 7
+
+  summary:
+    name: Build summary
     runs-on: ubuntu-latest
     needs: build
-    if: always() && needs.build.result == 'success'
+    if: always()
     steps:
-      - name: Download Linux build
-        uses: actions/download-artifact@v4
-        with:
-          name: OpenCity-StandaloneLinux64
-          path: build
-      - name: Report artifacts
+      - name: Report
         run: |
-          echo "Build artifacts:"
-          find build -maxdepth 2 -type f | head -50
+          echo "Windows 64-bit: ${{ needs.build.result }}"
+          if [ "${{ needs.build.result }}" != "success" ]; then
+            echo "::warning title=Сборка не завершилась::Смотрите артефакт logs-* и лог шага 'Activate Personal license and build'."
+          fi
