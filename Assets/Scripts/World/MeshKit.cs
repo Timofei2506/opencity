@@ -39,7 +39,11 @@ namespace OpenCity
             Vector3 p2 = center + u * hu + w * hw;
             Vector3 p3 = center - u * hu + w * hw;
 
-            // Unity front faces are wound clockwise, i.e. the face normal is -cross(u, w).
+            // Unity renders clockwise triangles as front faces. p0..p3 are ordered
+            // (-u-w) (+u-w) (+u+w) (-u+w), so 0-1-2 is counter-clockwise seen from the
+            // +normal side and the indices must be emitted as 0-2-1 / 0-3-2. The previous
+            // order made every quad a back face: the ground plane and all decals vanished
+            // and boxes were shaded from their inside (flat, dark geometry everywhere).
             Vector3 nrm = -Vector3.Cross(u, w).normalized;
 
             v.Add(p0); v.Add(p1); v.Add(p2); v.Add(p3);
@@ -49,8 +53,8 @@ namespace OpenCity
             uv.Add(uvOffset + uvScale);
             uv.Add(uvOffset + new Vector2(0f, uvScale.y));
 
-            t.Add(i); t.Add(i + 1); t.Add(i + 2);
-            t.Add(i); t.Add(i + 2); t.Add(i + 3);
+            t.Add(i); t.Add(i + 2); t.Add(i + 1);
+            t.Add(i); t.Add(i + 3); t.Add(i + 2);
         }
 
         /// <summary>Axis aligned box with per face UVs measured in metres.</summary>
