@@ -1,0 +1,83 @@
+name: Screenshots
+
+# Снимает кадры из игры в headless-режиме (xvfb + программный OpenGL) и
+# складывает PNG в артефакт "screenshots". Нужен для визуального контроля
+# моделей, текстур и освещения без запуска игры на машине разработчика.
+#
+# Запуск: Actions -> "Screenshots" -> Run workflow.
+
+on:
+  workflow_dispatch:
+
+env:
+  UNITY_IMAGE: unityci/editor:ubuntu-2022.3.20f1-base-3.2.2
+
+jobs:
+  shots:
+    name: Capture screenshots
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pull image
+        run: docker pull "$UNITY_IMAGE"
+
+      - name: Capture
+        id: shots
+        continue-on-error: true
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          mkdir -p Library logs screenshots
+          docker run --rm \
+            -e UNITY_EMAIL \
+            -e UNITY_PASSWORD \
+            -e LIBGL_ALWAYS_SOFTWARE=1 \
+            -e GALLIUM_DRIVER=llvmpipe \
+            -v "$PWD:/project" \
+            -w /project \
+            "$UNITY_IMAGE" \
+            bash -lc '
+              set -o pipefail
+              apt-get update -qq >/dev/null 2>&1
+              apt-get install -y -qq xvfb libgl1-mesa-dri libgl1 libglu1-mesa mesa-utils >/dev/null 2>&1 || true
+              echo "xvfb: $(which xvfb-run || echo MISSING)"
+
+              CLIENT=$(find /opt/unity -name "Unity.Licensing.Client" -type f 2>/dev/null | head -1)
+              chmod +x "$CLIENT" || true
+              "$CLIENT" --activate-all --include-personal \
+                 --username "$UNITY_EMAIL" --password "$UNITY_PASSWORD" > logs/activation.log 2>&1 \
+                 || { cat logs/activation.log; echo "::error::License activation failed"; exit 1; }
+
+              glxinfo -B 2>/dev/null | head -8 || echo "glxinfo unavailable"
+
+              timeout -k 20 1500 xvfb-run -a -s "-screen 0 1600x900x24" \
+                /opt/unity/Editor/Unity -batchmode -projectPath /project \
+                -executeMethod OpenCity.EditorTools.ScreenshotTool.CaptureAll \
+                -logFile /project/logs/shots.log
+              status=$?
+              echo "Unity exit code: $status"
+
+              echo "=== screenshots ==="
+              ls -la screenshots || true
+              echo "=== errors ==="
+              grep -nE "error CS|Exception|Screenshots\]|GfxDevice|Failed to initialize|OpenGL|OpenGLCore" logs/shots.log | tail -40 || true
+            '
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: screenshots
+          if-no-files-found: warn
+
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-log
+          path: logs
+          if-no-files-found: ignore
